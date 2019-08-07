@@ -1,0 +1,136 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+require 'yaml'
+require 'deep_merge'
+require 'glot'
+
+def foreach_lang_file
+  read!.each do |k, v|
+    yield k, v
+  end
+end
+
+def read!
+  files = {}
+  Dir["config/locales/#{@subdir}/*.yml"].each do |filename|
+    content = File.read(filename)
+
+    langr = /(?<lang>[a-z]{2})\.yml$/
+    m = langr.match(filename)
+    files[m[:lang]] = YAML.load_file(filename)
+    files[m[:lang]].reference_names = Glot.extract_reference_locations(content)
+
+    # filem = filer.match(filename)
+    # files[filem[:file]] = YAML.load_file(filename)
+  end
+  files
+end
+
+def write!(files)
+  files.each do |k, v|
+    content = v.to_yaml(line_width: -1)
+    filename = "config/locales/#{@subdir}/#{k}.yml"
+    File.write(filename, Glot.reapply_references(content, v))
+  end
+end
+
+def add!(files, path)
+  s = [path]
+
+  s.each do |line|
+    Glot.set(line, files, 'TRANSLATE_ME')
+  end
+end
+
+def sort!(files)
+  files.each do |name, hash|
+    hash.deep_key_sort!
+    files[name] = hash
+  end
+end
+
+cmd = ARGV.shift || ''
+
+@subdir = ENV['SUBDIR']
+files = read!
+if cmd.casecmp('add').zero?
+  add! files, ARGV.shift
+  write! files
+elsif cmd.casecmp('sort').zero?
+  sort! files
+  write! files
+
+elsif cmd.casecmp('find').zero?
+  puts Glot.find ARGV.shift, files
+
+elsif cmd.casecmp('translate_mes').zero?
+  foreach_lang_file do |_name, hash|
+    hash.deep_traverse do |path, value|
+      puts path.join('.') if value == 'TRANSLATE_ME'
+    end
+  end
+
+elsif cmd.casecmp('diff').zero?
+  lang = ARGV.shift
+  if lang == '--fill'
+    lang = nil
+    ARGV << '--fill'
+  end
+  total = []
+  x = {}
+  foreach_lang_file do |name, hash|
+    x[name] = {}
+    hash.deep_traverse do |arr, _value|
+      path = arr.join('.').sub(/^#{name}\./, '')
+      x[name][path] = true
+      total << path
+    end
+  end
+
+  total = total.uniq
+
+  if ARGV.shift == '--fill'
+    keys = total
+    keys = total - x[lang].keys if lang
+    keys.each do |missingkey|
+      next if x[missingkey]
+
+      add! files, missingkey
+    end
+
+    write! files
+  else
+    foreach_lang_file do |name, _hash|
+      next if lang && lang.to_s != name.to_s
+
+      puts name.to_s
+      puts '======================='
+      puts total - x[name].keys
+      puts '======================='
+    end
+  end
+
+else
+  puts <<~EDUCATE
+    Translation file tool
+    USAGE:
+    glot sort
+    Sort translations
+
+    glot add <activerecord.payment.some.translation.key>
+    Insert a translation path with a dummy value 'TRANSLATE_ME'
+
+    glot find <thing>
+    Find the exact path of a phrase in the translation files
+
+    glot translate_mes
+    Find paths that still have TRANSLATE_ME in them
+
+    glot diff [lang]
+    Find paths that are missing in each file [or the language chosen]
+
+    glot diff [lang] --fill
+    Find paths that are missing in each file [or the language chosen] and fill it in
+  EDUCATE
+end

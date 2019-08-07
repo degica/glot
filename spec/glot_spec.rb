@@ -1,3 +1,5 @@
+# frozen_string_literal: true
+
 RSpec.describe Glot do
   it 'has a version number' do
     expect(Glot::VERSION).not_to be nil
