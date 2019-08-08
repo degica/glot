@@ -104,10 +104,13 @@ elsif cmd.casecmp('diff').zero?
     foreach_lang_file do |name, _hash|
       next if lang && lang.to_s != name.to_s
 
-      puts name.to_s
-      puts '======================='
-      puts total - x[name].keys
-      puts '======================='
+      puts <<~INFO
+        #{name.to_s}
+        -----------------------
+        #{(total - x[name].keys).join("\n")}
+        =======================
+
+      INFO
     end
   end
 
